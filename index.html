@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script>
+        let parseXml;
+        let xmlDoc;
+
+        if (typeof window.DOMParser != "undefined") {
+            parseXml = function (xmlStr) {
+                return (new window.DOMParser()).parseFromString(xmlStr, "text/xml");
+            };
+        } else if (typeof window.ActiveXObject != "undefined" &&
+            new window.ActiveXObject("Microsoft.XMLDOM")) {
+            parseXml = function (xmlStr) {
+                xmlDoc = new window.ActiveXObject("Microsoft.XMLDOM");
+                xmlDoc.async = "false";
+                xmlDoc.loadXML(xmlStr);
+                return xmlDoc;
+            };
+        } else {
+            throw new Error("No XML parser found");
+        }
+
+        async function fetchTextFromPPTX(url) {
+            const response = await fetch(url);
+            const textBuffer = await response.arrayBuffer();
+            const zip = await JSZip.loadAsync(textBuffer);
+            const slideXmlFiles = [];
+            const slides = [];
+
+            zip.forEach((relativePath, zipEntry) => {
+                if (zipEntry.name.startsWith('ppt/slides/slide')) {
+                    slideXmlFiles.push(zipEntry.name);
+                }
+            });
+
+            for (const xmlFile of slideXmlFiles) {
+                const xmlStr = await zip.file(xmlFile).async('string');
+                const xmlDoc = new DOMParser().parseFromString(xmlStr, 'text/xml');
+
+                let largestTextSize = 0;
+                let title = '';
+                let body = [];
+
+                xmlDoc.querySelectorAll('a\\:t, t').forEach(node => {
+                    if (!title) {
+                        title = node.textContent.trim();
+                    } else if (node.textContent != ''){
+                        body.push(node.textContent.trim());
+                    }
+                });
+                console.log(title, body)
+
+
+            }
+        }
+        fetchTextFromPPTX("./test.pptx");
+
+    </script>
+</head>
+
+<body>
+</body>
+
+</html>
