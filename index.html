@@ -10,6 +10,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
+
+        // Initial check for DOMParser presence (should be built into most modern browsers)
+
         let parseXml;
         let xmlDoc;
 
@@ -29,12 +32,88 @@
             throw new Error("No XML parser found");
         }
 
-        async function fetchTextFromPPTX(url) {
+        // Library function to extract Text, Images from the zipped file
+        // Output:
+
+        /* 
+            title: String 
+            body: array of Strings
+        */
+
+        async function fetchContentFromPPTX(url) {
+
+            // Fetch pptx file from URL
+
             const response = await fetch(url);
+
+            // Load the pptx object as an arrayBuffer
+
             const textBuffer = await response.arrayBuffer();
             const zip = await JSZip.loadAsync(textBuffer);
+
             const slideXmlFiles = [];
-            const slides = [];
+
+            const imgXmlFiles = [];
+
+            // All images are stored as image1.jpg, image2.png, in the media/image folder
+
+            zip.forEach((relativePath, zipEntry) => {
+                if (zipEntry.name.startsWith('ppt/media/image')) {
+                    imgXmlFiles.push(zipEntry.name);
+                }
+            });
+
+            // Sorting numerically is recommended for images
+
+            imgXmlFiles.sort((a, b) => {
+                const aIndex = parseInt(a.match(/\d+/)[0], 10);
+                const bIndex = parseInt(b.match(/\d+/)[0], 10);
+                return aIndex - bIndex;
+            });
+
+            // Still looking into rels files to attach the images to the page
+
+            /*
+            const relFiles = []
+
+            zip.forEach((relativePath, zipEntry) => {
+                if (zipEntry.name.startsWith('ppt/slides/_rels')) {
+                    relFiles.push(zipEntry.name);
+                }
+            });
+
+            relFiles.sort((a, b) => {
+                const aIndex = parseInt(a.match(/\d+/)[0], 10);
+                const bIndex = parseInt(b.match(/\d+/)[0], 10);
+                return aIndex - bIndex;
+            });
+
+            for (const relFile of relFiles) {
+                const relStr = await zip.file(relFile).async('string');
+                const relDoc = new DOMParser().parseFromString(relStr, 'text/xml');
+
+                //console.log(relFile, relDoc);
+            }
+            */
+            const images = [];
+
+            // Generating array of URLs for images, can handle processing separately
+
+            for (const imgFile of imgXmlFiles) {
+                const imgStr = await zip.file(imgFile).async('blob');
+                const imgUrl = URL.createObjectURL(imgStr);
+                images.push(imgUrl);
+
+                /*
+                const img = document.createElement('img');
+                img.src = imgUrl;
+                document.body.appendChild(img);
+                */
+
+            }
+            //console.log(images)
+
+            // All text is stored in their respective slide XMLs, slide1.xml, slide2.xml
 
             zip.forEach((relativePath, zipEntry) => {
                 if (zipEntry.name.startsWith('ppt/slides/slide')) {
@@ -42,27 +121,68 @@
                 }
             });
 
+            // Sorting numerically is recommended for slides
+
+            slideXmlFiles.sort((a, b) => {
+                const aIndex = parseInt(a.match(/\d+/)[0], 10);
+                const bIndex = parseInt(b.match(/\d+/)[0], 10);
+                return aIndex - bIndex;
+            });
+
+            // Loop through each slide
+
+            let titleArray = [];
+            let bodyArray = [];
+
             for (const xmlFile of slideXmlFiles) {
                 const xmlStr = await zip.file(xmlFile).async('string');
                 const xmlDoc = new DOMParser().parseFromString(xmlStr, 'text/xml');
 
                 let largestTextSize = 0;
-                let title = '';
-                let body = [];
+                let textSize = 0;
+                var title = '';
 
-                xmlDoc.querySelectorAll('a\\:t, t').forEach(node => {
+                var body = [];
+                let images = [];
+
+                xmlDoc.querySelectorAll('nvPicPr').forEach(node => {
+                    //console.log(node.children[0])
+                })
+
+                // Search for tags, which house text content
+
+                xmlDoc.querySelectorAll('r').forEach(node => {
+                    textSize = node.firstChild.attributes['sz']
+
+                    //console.log(xmlFile, node.firstChild.attributes['sz'], node.textContent)
+                    //console.log(node.textContent, node.children[0].attributes.sz)
+
+                    // Initially set the title to be the first piece of text
+
                     if (!title) {
+                        if (textSize) largestTextSize = textSize;
                         title = node.textContent.trim();
-                    } else if (node.textContent != ''){
+                    } else {
+                        if (textSize > largestTextSize) {
+                            title = node.textContent.trim();
+                        }
                         body.push(node.textContent.trim());
                     }
-                });
-                console.log(title, body)
-
-
+                    // Subsequently set the title to be the largest text in the slide
+                })
+                titleArray.push(title);
+                bodyArray.push(body);
+            }
+            return {
+                title: titleArray,
+                body: bodyArray,
+                imagesAll: images
             }
         }
-        fetchTextFromPPTX("./test.pptx");
+
+        (async () => {
+            console.log(await fetchContentFromPPTX("./test/customer svc.pptx"));
+        })();
 
     </script>
 </head>
