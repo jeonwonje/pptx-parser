@@ -38,6 +38,7 @@
         /* 
             title: String 
             body: array of Strings
+            imagesAll: array of Strings (image URLs)
         */
 
         async function fetchContentFromPPTX(url) {
@@ -73,8 +74,9 @@
 
             // Still looking into rels files to attach the images to the page
 
-            /*
+
             const relFiles = []
+            var i = 0;
 
             zip.forEach((relativePath, zipEntry) => {
                 if (zipEntry.name.startsWith('ppt/slides/_rels')) {
@@ -88,13 +90,6 @@
                 return aIndex - bIndex;
             });
 
-            for (const relFile of relFiles) {
-                const relStr = await zip.file(relFile).async('string');
-                const relDoc = new DOMParser().parseFromString(relStr, 'text/xml');
-
-                //console.log(relFile, relDoc);
-            }
-            */
             const images = [];
 
             // Generating array of URLs for images, can handle processing separately
@@ -133,10 +128,21 @@
 
             let titleArray = [];
             let bodyArray = [];
+            var coverImages = [];
+
 
             for (const xmlFile of slideXmlFiles) {
                 const xmlStr = await zip.file(xmlFile).async('string');
                 const xmlDoc = new DOMParser().parseFromString(xmlStr, 'text/xml');
+
+                let relFile = `${xmlFile.substring(0, xmlFile.lastIndexOf("/"))}/_rels/${xmlFile.substring(xmlFile.lastIndexOf("/") + 1)}.rels`;
+
+                const relStr = await zip.file(relFile).async('string');
+                const relDoc = new DOMParser().parseFromString(relStr, 'text/xml');
+
+                // Create an iterable array of all Relationships in our xml File
+
+                const allRels = Object.values(relDoc.children[0].children);
 
                 let largestTextSize = 0;
                 let textSize = 0;
@@ -145,17 +151,60 @@
                 var body = [];
                 let images = [];
 
-                xmlDoc.querySelectorAll('nvPicPr').forEach(node => {
-                    //console.log(node.children[0])
+                // Search for all pictures 
+
+                let imageSize = 0;
+                var imageRel = ''
+                const imageRelArr = [];
+
+                xmlDoc.querySelectorAll('pic').forEach(node => {
+                    // node.children[1] is the blipfill
+                    // the relationship embed id (rId) is stored in the attributes
+
+                    //console.log(xmlFile, node.children[1].children[0].attributes['r:embed'].value) 
+
+                    // node.children[2] is the spPr - shape properties
+                    const currentXvalue = parseInt(node.children[2].children[0].children[1].attributes["cx"].value);
+                    const currentYvalue = parseInt(node.children[2].children[0].children[1].attributes["cy"].value);
+
+                    const currImageArea = currentXvalue * currentYvalue;
+
+                    if (!imageSize) {
+                        imageSize = currImageArea;
+                        imageRel = node.children[1].children[0].attributes['r:embed'].value
+                    } else {
+                        if (currImageArea > imageSize) {
+                            imageSize = currImageArea;
+
+                            // imageRel now contains the Relationship rId of the largest image
+
+                            imageRel = node.children[1].children[0].attributes['r:embed'].value;
+                        }
+                    }
+                })
+
+                if (!imageRel) coverImages.push("no-text")
+
+                var locationURL = '';
+
+                xmlDoc.querySelectorAll('blip').forEach(node => {
+                    const currImgRel = node.attributes["r:embed"].value;
+
+                    allRels.forEach(element => {
+                        if (imageRel == currImgRel) {
+                            if (element.attributes["Id"].value == imageRel) {
+                                locationURL = element.attributes["Target"].value;
+                                coverImages.push(locationURL);
+                            }
+                        }
+                    });
+
                 })
 
                 // Search for tags, which house text content
 
                 xmlDoc.querySelectorAll('r').forEach(node => {
                     textSize = node.firstChild.attributes['sz']
-
-                    //console.log(xmlFile, node.firstChild.attributes['sz'], node.textContent)
-                    //console.log(node.textContent, node.children[0].attributes.sz)
 
                     // Initially set the title to be the first piece of text
 
@@ -176,9 +225,11 @@
             return {
                 title: titleArray,
                 body: bodyArray,
-                imagesAll: images
+                imagesAll: images,
+                coverImages: coverImages
             }
         }
+        fetchContentFromPPTX("./test/customer svc.pptx");
 
         (async () => {
             console.log(await fetchContentFromPPTX("./test/customer svc.pptx"));
