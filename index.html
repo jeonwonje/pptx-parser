@@ -39,6 +39,7 @@
             title: String 
             body: array of Strings
             imagesAll: array of Strings (image URLs)
+            coverImages: array of Strings (image reference of the largest image per slide)
         */
 
         async function fetchContentFromPPTX(url) {
@@ -57,9 +58,12 @@
             const imgXmlFiles = [];
 
             // All images are stored as image1.jpg, image2.png, in the media/image folder
+            // All videos are stored as media1.mp4, media2.mov, in the media/image folder
 
             zip.forEach((relativePath, zipEntry) => {
                 if (zipEntry.name.startsWith('ppt/media/image')) {
+                    imgXmlFiles.push(zipEntry.name);
+                } else if (zipEntry.name.startsWith('ppt/media/media')) {
                     imgXmlFiles.push(zipEntry.name);
                 }
             });
@@ -71,9 +75,6 @@
                 const bIndex = parseInt(b.match(/\d+/)[0], 10);
                 return aIndex - bIndex;
             });
-
-            // Still looking into rels files to attach the images to the page
-
 
             const relFiles = []
             var i = 0;
@@ -99,14 +100,19 @@
                 const imgUrl = URL.createObjectURL(imgStr);
                 images.push(imgUrl);
 
-                /*
+                // Appending source video just for test purposes
+
+                if (imgFile.substring(url.lastIndexOf('/') + 1).includes('media')) {
+                    const vid = document.createElement('video');
+                    vid.src = imgUrl;
+                    vid.controls = true;
+                    document.body.appendChild(vid)
+                }
+
                 const img = document.createElement('img');
                 img.src = imgUrl;
-                document.body.appendChild(img);
-                */
-
+               // document.body.appendChild(img);
             }
-            //console.log(images)
 
             // All text is stored in their respective slide XMLs, slide1.xml, slide2.xml
 
@@ -157,6 +163,7 @@
                 var imageRel = ''
                 const imageRelArr = [];
 
+
                 xmlDoc.querySelectorAll('pic').forEach(node => {
                     // node.children[1] is the blipfill
                     // the relationship embed id (rId) is stored in the attributes
@@ -183,7 +190,21 @@
                     }
                 })
 
-                if (!imageRel) coverImages.push("no-text")
+                // Search for EMBED videos, which takes priority over images
+                // Since embed videos are external source, the coverImages will hold the embed URL
+
+                xmlDoc.querySelectorAll('videoFile').forEach(node => {
+                    videoRel = node.attributes["r:link"].value;
+                    console.log(node)
+                    allRels.forEach(element => {
+                        // console.log(element.attributes["Target"].value)
+                        if (element.attributes["Id"].value == videoRel) {
+                            videoLink = element.attributes["Target"].value
+                        }
+                    });
+                });
+
+                if (!imageRel) coverImages.push("no-media")
 
                 var locationURL = '';
 
@@ -194,7 +215,13 @@
                         if (imageRel == currImgRel) {
                             if (element.attributes["Id"].value == imageRel) {
                                 locationURL = element.attributes["Target"].value;
-                                coverImages.push(locationURL);
+                                if (!videoRel) {
+                                    coverImages.push(locationURL);
+                                } else if (videoRel) {
+                                    coverImages.push(videoLink);
+                                }
+                                // Push the video link if it exists
+                                // If slide doesnt have a video, upload the image
                             }
                         }
                     });
@@ -229,10 +256,10 @@
                 coverImages: coverImages
             }
         }
-        fetchContentFromPPTX("./test/customer svc.pptx");
+        //fetchContentFromPPTX("./test/customer svc.pptx");
 
         (async () => {
-            console.log(await fetchContentFromPPTX("./test/customer svc.pptx"));
+            console.log(await fetchContentFromPPTX("./test/testVideo.pptx"));
         })();
 
     </script>
